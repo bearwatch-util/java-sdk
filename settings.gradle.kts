@@ -1,1 +1,1 @@
-rootProject.name = "bearwatch-sdk"
+rootProject.name = "bearwatch-java-sdk"

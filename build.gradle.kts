@@ -4,7 +4,7 @@ plugins {
     signing
 }
 
-group = "io.bearwatch"
+group = "io.github.bearwatch-util"
 version = "0.1.0"
 
 java {
@@ -43,9 +43,9 @@ publishing {
             from(components["java"])
 
             pom {
-                name.set("BearWatch SDK")
+                name.set("BearWatch Java SDK")
                 description.set("Official Java SDK for BearWatch - Cron/Job Monitoring")
-                url.set("https://github.com/bearwatch-io/bearwatch")
+                url.set("https://github.com/bearwatch-util/bearwatch-java-sdk")
 
                 licenses {
                     license {
@@ -63,9 +63,9 @@ publishing {
                 }
 
                 scm {
-                    connection.set("scm:git:git://github.com/bearwatch-io/bearwatch.git")
-                    developerConnection.set("scm:git:ssh://github.com/bearwatch-io/bearwatch.git")
-                    url.set("https://github.com/bearwatch-io/bearwatch")
+                    connection.set("scm:git:git://github.com/bearwatch-util/bearwatch-java-sdk.git")
+                    developerConnection.set("scm:git:ssh://github.com/bearwatch-util/bearwatch-java-sdk.git")
+                    url.set("https://github.com/bearwatch-util/bearwatch-java-sdk")
                 }
             }
         }
@@ -87,12 +87,6 @@ publishing {
 }
 
 signing {
-    val signingKey = findProperty("signingKey") as String? ?: System.getenv("GPG_SIGNING_KEY")
-    val signingPassword = findProperty("signingPassword") as String? ?: System.getenv("GPG_SIGNING_PASSWORD")
-    useInMemoryPgpKeys(signingKey, signingPassword)
+    useGpgCmd()
     sign(publishing.publications["mavenJava"])
-}
-
-tasks.withType<Sign>().configureEach {
-    onlyIf { project.hasProperty("signing.keyId") || System.getenv("GPG_SIGNING_KEY") != null }
 }
