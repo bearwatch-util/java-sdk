@@ -4,6 +4,7 @@ import io.bearwatch.sdk.model.HeartbeatResponse;
 import io.bearwatch.sdk.model.RequestStatus;
 import io.bearwatch.sdk.model.Status;
 import io.bearwatch.sdk.options.PingOptions;
+import io.bearwatch.sdk.options.WrapOptions;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -135,6 +136,66 @@ class BearWatchTest {
                 .hasMessage("Task failed!");
     }
 
+    @Test
+    void shouldWrapWithOptions() throws InterruptedException {
+        server.enqueue(successResponse());
+
+        WrapOptions options = WrapOptions.builder()
+                .output("Processed 100 records")
+                .metadata("recordCount", 100)
+                .build();
+
+        client.wrap("job-123", options, () -> {
+            // task
+        });
+
+        RecordedRequest request = server.takeRequest();
+        String body = request.getBody().readUtf8();
+        assertThat(body).contains("\"status\":\"SUCCESS\"");
+        assertThat(body).contains("\"output\":\"Processed 100 records\"");
+        assertThat(body).contains("\"recordCount\":100");
+    }
+
+    @Test
+    void shouldWrapWithOptionsAndReturnResult() throws InterruptedException {
+        server.enqueue(successResponse());
+
+        WrapOptions options = WrapOptions.builder()
+                .output("Result computed")
+                .metadata("value", 42)
+                .build();
+
+        Integer result = client.wrap("job-123", options, () -> 42);
+
+        assertThat(result).isEqualTo(42);
+
+        RecordedRequest request = server.takeRequest();
+        String body = request.getBody().readUtf8();
+        assertThat(body).contains("\"output\":\"Result computed\"");
+        assertThat(body).contains("\"value\":42");
+    }
+
+    @Test
+    void shouldWrapWithOptionsOnFailure() throws InterruptedException {
+        server.enqueue(failedResponse());
+
+        WrapOptions options = WrapOptions.builder()
+                .metadata("attemptCount", 3)
+                .build();
+
+        assertThatThrownBy(() -> client.wrap("job-123", options, () -> {
+            throw new RuntimeException("Task failed!");
+        }))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Task failed!");
+
+        // Verify metadata is sent even on failure
+        RecordedRequest request = server.takeRequest();
+        String body = request.getBody().readUtf8();
+        assertThat(body).contains("\"status\":\"FAILED\"");
+        assertThat(body).contains("\"attemptCount\":3");
+    }
+
     // ========== wrapAsync Tests ==========
 
     @Test
@@ -200,6 +261,27 @@ class BearWatchTest {
                 .isInstanceOf(ExecutionException.class)
                 .hasCauseInstanceOf(RuntimeException.class)
                 .hasRootCauseMessage("Original error");
+    }
+
+    @Test
+    void shouldWrapAsyncWithOptions() throws Exception {
+        server.enqueue(successResponse());
+
+        WrapOptions options = WrapOptions.builder()
+                .output("Async processed")
+                .metadata("async", true)
+                .build();
+
+        String result = client.wrapAsync("job-123", options, () ->
+                CompletableFuture.completedFuture("async result")
+        ).get();
+
+        assertThat(result).isEqualTo("async result");
+
+        RecordedRequest request = server.takeRequest();
+        String body = request.getBody().readUtf8();
+        assertThat(body).contains("\"output\":\"Async processed\"");
+        assertThat(body).contains("\"async\":true");
     }
 
     @Test

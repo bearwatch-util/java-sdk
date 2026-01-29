@@ -9,6 +9,7 @@ import io.bearwatch.sdk.model.HeartbeatResponse;
 import io.bearwatch.sdk.model.RequestStatus;
 import io.bearwatch.sdk.model.Status;
 import io.bearwatch.sdk.options.PingOptions;
+import io.bearwatch.sdk.options.WrapOptions;
 
 import java.time.Instant;
 import java.util.Map;
@@ -181,18 +182,33 @@ public class BearWatch {
      * @param task the task to execute
      */
     public void wrap(String jobId, Runnable task) {
+        wrap(jobId, null, task);
+    }
+
+    /**
+     * Wraps a task with automatic heartbeat reporting and options.
+     * Sends SUCCESS on completion, FAILED on exception.
+     *
+     * @param jobId the job ID
+     * @param options the wrap options (output, metadata)
+     * @param task the task to execute
+     */
+    public void wrap(String jobId, WrapOptions options, Runnable task) {
         Objects.requireNonNull(jobId, "jobId must not be null");
         Objects.requireNonNull(task, "task must not be null");
+
+        String output = options != null ? options.getOutput() : null;
+        Map<String, Object> metadata = options != null ? options.getMetadata() : null;
 
         Instant startedAt = Instant.now();
         try {
             task.run();
-            completeInternal(jobId, startedAt, null, null);
+            completeInternal(jobId, startedAt, output, metadata);
         } catch (Exception e) {
             // Report failure but ignore heartbeat errors to preserve original exception
             try {
                 String errorMessage = e.getMessage() != null ? e.getMessage() : e.toString();
-                failInternal(jobId, startedAt, errorMessage);
+                failInternal(jobId, startedAt, errorMessage, metadata);
             } catch (Exception ignored) {
                 // Heartbeat failure is ignored - original exception takes priority
             }
@@ -216,19 +232,42 @@ public class BearWatch {
      * @throws BearWatchException if the task throws a checked exception (wraps the original)
      */
     public <T> T wrap(String jobId, Callable<T> task) {
+        return wrap(jobId, null, task);
+    }
+
+    /**
+     * Wraps a task with automatic heartbeat reporting, options, and returns the result.
+     * Sends SUCCESS on completion, FAILED on exception.
+     *
+     * <p>Note: If the task throws a checked exception, it will be wrapped in a
+     * {@link BearWatchException}. This is a Java language constraint since checked
+     * exceptions cannot be re-thrown directly. RuntimeExceptions are re-thrown as-is.</p>
+     *
+     * @param jobId the job ID
+     * @param options the wrap options (output, metadata)
+     * @param task the task to execute
+     * @param <T> the result type
+     * @return the task result
+     * @throws RuntimeException if the task throws a RuntimeException
+     * @throws BearWatchException if the task throws a checked exception (wraps the original)
+     */
+    public <T> T wrap(String jobId, WrapOptions options, Callable<T> task) {
         Objects.requireNonNull(jobId, "jobId must not be null");
         Objects.requireNonNull(task, "task must not be null");
+
+        String output = options != null ? options.getOutput() : null;
+        Map<String, Object> metadata = options != null ? options.getMetadata() : null;
 
         Instant startedAt = Instant.now();
         try {
             T result = task.call();
-            completeInternal(jobId, startedAt, null, null);
+            completeInternal(jobId, startedAt, output, metadata);
             return result;
         } catch (Exception e) {
             // Report failure but ignore heartbeat errors to preserve original exception
             try {
                 String errorMessage = e.getMessage() != null ? e.getMessage() : e.toString();
-                failInternal(jobId, startedAt, errorMessage);
+                failInternal(jobId, startedAt, errorMessage, metadata);
             } catch (Exception ignored) {
                 // Heartbeat failure is ignored - original exception takes priority
             }
@@ -250,8 +289,26 @@ public class BearWatch {
      * @return a CompletableFuture that completes with the task result
      */
     public <T> CompletableFuture<T> wrapAsync(String jobId, Supplier<CompletableFuture<T>> task) {
+        return wrapAsync(jobId, null, task);
+    }
+
+    /**
+     * Wraps an async task with automatic heartbeat reporting and options.
+     * Sends SUCCESS on completion, FAILED on exception.
+     * Waits for heartbeat to complete before returning, but ignores heartbeat errors.
+     *
+     * @param jobId the job ID
+     * @param options the wrap options (output, metadata)
+     * @param task the async task to execute (returns a CompletableFuture)
+     * @param <T> the result type
+     * @return a CompletableFuture that completes with the task result
+     */
+    public <T> CompletableFuture<T> wrapAsync(String jobId, WrapOptions options, Supplier<CompletableFuture<T>> task) {
         Objects.requireNonNull(jobId, "jobId must not be null");
         Objects.requireNonNull(task, "task must not be null");
+
+        String output = options != null ? options.getOutput() : null;
+        Map<String, Object> metadata = options != null ? options.getMetadata() : null;
 
         Instant startedAt = Instant.now();
         return task.get()
@@ -260,7 +317,7 @@ public class BearWatch {
                         // Send failure heartbeat and wait for it, then re-throw original error
                         Throwable cause = error.getCause() != null ? error.getCause() : error;
                         String errorMessage = cause.getMessage() != null ? cause.getMessage() : cause.toString();
-                        return failInternalAsync(jobId, startedAt, errorMessage)
+                        return failInternalAsync(jobId, startedAt, errorMessage, metadata)
                                 .<T>handle((heartbeatResponse, heartbeatError) -> {
                                     // Ignore heartbeat error, re-throw original error
                                     if (error instanceof RuntimeException) {
@@ -270,7 +327,7 @@ public class BearWatch {
                                 });
                     } else {
                         // Wait for heartbeat to complete, but ignore errors and return original result
-                        return completeInternalAsync(jobId, startedAt, null, null)
+                        return completeInternalAsync(jobId, startedAt, output, metadata)
                                 .handle((heartbeatResponse, heartbeatError) -> result);
                     }
                 })
@@ -300,7 +357,7 @@ public class BearWatch {
         }
     }
 
-    HeartbeatResponse failInternal(String jobId, Instant startedAt, String error) {
+    HeartbeatResponse failInternal(String jobId, Instant startedAt, String error, Map<String, Object> metadata) {
         Instant completedAt = Instant.now();
         Instant effectiveStartedAt = startedAt != null ? startedAt : completedAt;
 
@@ -310,7 +367,7 @@ public class BearWatch {
                 completedAt,
                 null,
                 error,
-                null
+                metadata
         );
 
         String path = "/api/v1/ingest/jobs/" + jobId + "/heartbeat";
@@ -350,7 +407,7 @@ public class BearWatch {
                 });
     }
 
-    CompletableFuture<HeartbeatResponse> failInternalAsync(String jobId, Instant startedAt, String error) {
+    CompletableFuture<HeartbeatResponse> failInternalAsync(String jobId, Instant startedAt, String error, Map<String, Object> metadata) {
         Instant completedAt = Instant.now();
         Instant effectiveStartedAt = startedAt != null ? startedAt : completedAt;
 
@@ -360,7 +417,7 @@ public class BearWatch {
                 completedAt,
                 null,
                 error,
-                null
+                metadata
         );
 
         String path = "/api/v1/ingest/jobs/" + jobId + "/heartbeat";

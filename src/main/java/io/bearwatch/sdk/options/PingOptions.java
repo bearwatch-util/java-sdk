@@ -17,8 +17,10 @@ import java.util.Map;
  *     .status(RequestStatus.SUCCESS)
  *     .startedAt(startTime)
  *     .completedAt(endTime)
- *     .output("Processed 100 records")
- *     .metadata("recordCount", 100)
+ *     .output("Backup completed")
+ *     .metadata("server", "backup-01")
+ *     .metadata("region", "ap-northeast-2")
+ *     .metadata("version", "1.2.0")
  *     .build();
  * }</pre>
  */

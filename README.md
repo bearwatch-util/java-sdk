@@ -107,6 +107,29 @@ public void runBackup() {
 
 > **Tip**: Use `wrap` for most cases. Use `ping` when you need more control (e.g., reporting RUNNING status for long jobs).
 
+#### wrap with options
+
+Include output and metadata with automatic timing:
+
+```java
+bw.wrap("507f1f77bcf86cd799439011", WrapOptions.builder()
+    .metadata("server", "backup-01")
+    .metadata("region", "ap-northeast-2")
+    .metadata("version", "1.2.0")
+    .build(), () -> {
+    performBackup();
+});
+
+// With return value
+int count = bw.wrap("507f1f77bcf86cd799439011", WrapOptions.builder()
+    .metadata("server", "backup-01")
+    .metadata("region", "ap-northeast-2")
+    .metadata("version", "1.2.0")
+    .build(), () -> {
+    return processRecords();
+});
+```
+
 ### ping - Manual Status Reporting
 
 Use `ping` when you need fine-grained control over status reporting:
@@ -134,7 +157,9 @@ public void runBackup() {
     bw.ping("507f1f77bcf86cd799439011", PingOptions.builder()
         .status(RequestStatus.SUCCESS)
         .output("Backup completed: " + bytes + " bytes")
-        .metadata("bytes", bytes)
+        .metadata("server", "backup-01")
+        .metadata("region", "ap-northeast-2")
+        .metadata("version", "1.2.0")
         .build());
 }
 ```
@@ -242,6 +267,23 @@ try {
 | `NETWORK_ERROR`   | Network failure          | Yes     |
 | `TIMEOUT`         | Request timed out        | Yes     |
 
+### Error Context
+
+For debugging, exceptions include context information about the failed operation:
+
+```java
+try {
+    bw.ping("507f1f77bcf86cd799439011");
+} catch (BearWatchException e) {
+    BearWatchException.ErrorContext ctx = e.getContext();
+    if (ctx != null) {
+        System.err.println("Job ID: " + ctx.getJobId());
+        System.err.println("Operation: " + ctx.getOperation());  // "ping", "wrap", "pingAsync", etc.
+        System.err.println("Run ID: " + ctx.getRunId());         // null if not yet created
+    }
+}
+```
+
 ## Types
 
 The SDK provides clear type separation for requests vs responses:
@@ -251,7 +293,8 @@ import io.bearwatch.sdk.BearWatch;
 import io.bearwatch.sdk.BearWatchConfig;
 import io.bearwatch.sdk.BearWatchException;
 import io.bearwatch.sdk.model.HeartbeatResponse;
-import io.bearwatch.sdk.model.PingOptions;
+import io.bearwatch.sdk.options.PingOptions;
+import io.bearwatch.sdk.options.WrapOptions;
 import io.bearwatch.sdk.model.RequestStatus;   // For requests: RUNNING, SUCCESS, FAILED
 import io.bearwatch.sdk.model.Status;          // For responses: includes TIMEOUT, MISSED
 ```
@@ -267,7 +310,9 @@ public class BearWatch {
     HeartbeatResponse ping(String jobId, PingOptions options);
 
     void wrap(String jobId, Runnable task);
+    void wrap(String jobId, WrapOptions options, Runnable task);
     <T> T wrap(String jobId, Callable<T> task);
+    <T> T wrap(String jobId, WrapOptions options, Callable<T> task);
 
     // Async methods (callback-based)
     void pingAsync(String jobId, ResultCallback<HeartbeatResponse> callback);
@@ -275,9 +320,27 @@ public class BearWatch {
 
     // Async methods (CompletableFuture-based)
     <T> CompletableFuture<T> wrapAsync(String jobId, Supplier<CompletableFuture<T>> task);
+    <T> CompletableFuture<T> wrapAsync(String jobId, WrapOptions options, Supplier<CompletableFuture<T>> task);
 
     void close();
 }
+```
+
+### HeartbeatResponse
+
+The response returned from `ping()` contains:
+
+| Field        | Type      | Description                                |
+|--------------|-----------|--------------------------------------------|
+| `runId`      | `String`  | Unique ID for this run                     |
+| `jobId`      | `String`  | The job ID                                 |
+| `status`     | `Status`  | Recorded status (SUCCESS, FAILED, etc.)    |
+| `receivedAt` | `Instant` | Timestamp when server received the request |
+
+```java
+HeartbeatResponse response = bw.ping("507f1f77bcf86cd799439011");
+System.out.println("Run ID: " + response.getRunId());
+System.out.println("Received at: " + response.getReceivedAt());
 ```
 
 ## Common Patterns
