@@ -62,68 +62,6 @@ class RetryPolicyTest {
         }
     }
 
-    /**
-     * Verifies that complete() retries on server error.
-     */
-    @Test
-    void completeShouldRetryOnServerError() throws InterruptedException {
-        // First request fails, second succeeds
-        server.enqueue(new MockResponse()
-                .setResponseCode(500)
-                .setBody("Internal Server Error"));
-        server.enqueue(successResponse());
-
-        BearWatchConfig config = BearWatchConfig.builder("bw_test_api_key")
-                .baseUrl(server.url("/").toString().replaceAll("/$", ""))
-                .timeout(Duration.ofSeconds(2))
-                .maxRetries(3)
-                .retryDelay(Duration.ofMillis(10))
-                .build();
-
-        BearWatch client = BearWatch.create(config);
-
-        try {
-            var response = client.complete("job-123");
-            assertThat(response.getRunId()).isEqualTo("run-abc");
-
-            // Verify TWO requests were made
-            assertThat(server.getRequestCount()).isEqualTo(2);
-        } finally {
-            client.close();
-        }
-    }
-
-    /**
-     * Verifies that fail() retries on server error.
-     */
-    @Test
-    void failShouldRetryOnServerError() throws InterruptedException {
-        // First request fails, second succeeds
-        server.enqueue(new MockResponse()
-                .setResponseCode(500)
-                .setBody("Internal Server Error"));
-        server.enqueue(failedResponse());
-
-        BearWatchConfig config = BearWatchConfig.builder("bw_test_api_key")
-                .baseUrl(server.url("/").toString().replaceAll("/$", ""))
-                .timeout(Duration.ofSeconds(2))
-                .maxRetries(3)
-                .retryDelay(Duration.ofMillis(10))
-                .build();
-
-        BearWatch client = BearWatch.create(config);
-
-        try {
-            var response = client.fail("job-123", "Error occurred");
-            assertThat(response.getRunId()).isEqualTo("run-def");
-
-            // Verify TWO requests were made
-            assertThat(server.getRequestCount()).isEqualTo(2);
-        } finally {
-            client.close();
-        }
-    }
-
     private MockResponse successResponse() {
         return new MockResponse()
                 .setResponseCode(200)

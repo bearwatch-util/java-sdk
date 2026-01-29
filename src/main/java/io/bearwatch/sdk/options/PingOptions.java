@@ -114,27 +114,6 @@ public class PingOptions {
         }
 
         /**
-         * Sets the job status.
-         *
-         * @param status the status (default: SUCCESS)
-         * @return this builder
-         * @throws IllegalArgumentException if status is TIMEOUT or MISSED
-         * @deprecated Use {@link #status(RequestStatus)} instead.
-         *             TIMEOUT and MISSED are server-detected states and cannot be set in requests.
-         */
-        @Deprecated
-        public Builder status(Status status) {
-            if (status == Status.TIMEOUT || status == Status.MISSED) {
-                throw new IllegalArgumentException(
-                        "Cannot use " + status + " in requests. Only RUNNING, SUCCESS, FAILED are allowed. " +
-                        "TIMEOUT and MISSED are server-detected states."
-                );
-            }
-            this.status = RequestStatus.valueOf(status.name());
-            return this;
-        }
-
-        /**
          * Sets when the job started.
          *
          * @param startedAt the start time

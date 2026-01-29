@@ -67,7 +67,7 @@ class BearWatchTest {
         server.enqueue(successResponse());
 
         client.ping("job-123", PingOptions.builder()
-                .status(Status.SUCCESS)
+                .status(RequestStatus.SUCCESS)
                 .output("Processed 100 records")
                 .metadata("recordCount", 100)
                 .build());
@@ -85,7 +85,7 @@ class BearWatchTest {
     void shouldPingWithStatus() throws InterruptedException {
         server.enqueue(failedResponse());
 
-        client.ping("job-123", Status.FAILED);
+        client.ping("job-123", RequestStatus.FAILED);
 
         RecordedRequest request = server.takeRequest();
         String body = request.getBody().readUtf8();

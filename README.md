@@ -1,6 +1,6 @@
 # BearWatch Java SDK
 
-Official Java SDK for [BearWatch](https://bearwatch.dev) - Cron/Job Monitoring for developers.
+Official Java SDK for [BearWatch](https://bearwatch.dev) - Job monitoring and alerting for developers.
 
 ## Installation
 
@@ -8,7 +8,7 @@ Official Java SDK for [BearWatch](https://bearwatch.dev) - Cron/Job Monitoring f
 
 ```kotlin
 dependencies {
-    implementation("io.bearwatch:bearwatch-sdk:0.1.0")
+    implementation("io.github.bearwatch-util:bearwatch-java-sdk:0.1.0")
 }
 ```
 
@@ -16,7 +16,7 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'io.bearwatch:bearwatch-sdk:0.1.0'
+    implementation 'io.github.bearwatch-util:bearwatch-java-sdk:0.1.0'
 }
 ```
 
@@ -24,183 +24,265 @@ dependencies {
 
 ```xml
 <dependency>
-    <groupId>io.bearwatch</groupId>
-    <artifactId>bearwatch-sdk</artifactId>
+    <groupId>io.github.bearwatch-util</groupId>
+    <artifactId>bearwatch-java-sdk</artifactId>
     <version>0.1.0</version>
 </dependency>
 ```
 
+## Requirements
+
+- **Java 11 or higher**
+
 ## Quick Start
+
+### 1. Get API Key
+
+Go to [BearWatch Dashboard](https://bearwatch.dev) → Project Settings → Create API Key (e.g., `bw_kI6t8QA21on0DKeRDlen8r2hzucVNL3WdAfaZgQdetY`).
+
+### 2. Create a Job
+
+Create a job in the dashboard. You'll get a job ID (24-character hex string, e.g., `507f1f77bcf86cd799439011`).
+
+### 3. Install and Use
+
+Let's assume you have a daily backup job that runs at 2:00 AM:
 
 ```java
 import io.bearwatch.sdk.BearWatch;
 import io.bearwatch.sdk.BearWatchConfig;
 
-// 1. Create client
-BearWatch bw = BearWatch.create(BearWatchConfig.builder("bw_your_api_key").build());
+public class BackupJob {
+    private final BearWatch bw = BearWatch.create(
+        BearWatchConfig.builder("your-api-key").build()
+    );
 
-// 2. Monitor your job
-bw.wrap("my-backup-job", () -> {
-    // Your job logic here
-    performBackup();
-});
+    @Scheduled(cron = "0 0 2 * * *")
+    public void runBackup() {
+        bw.wrap("507f1f77bcf86cd799439011", () -> {
+            performBackup();
+        });
+    }
+}
 ```
 
 ## Usage
 
-### Simple Ping
+### wrap - Automatic Status Reporting
 
-The simplest way to monitor a job - call `ping()` when it completes:
+Wraps a function and automatically:
+- Measures `startedAt` and `completedAt`
+- Reports `SUCCESS` or `FAILED` based on whether the function completes or throws
+
+```java
+// Void task
+bw.wrap("507f1f77bcf86cd799439011", () -> {
+    performBackup();
+});
+
+// Task with return value
+int count = bw.wrap("507f1f77bcf86cd799439011", () -> {
+    return countRecords();
+});
+```
+
+**Error handling behavior:**
+- On success: reports `SUCCESS` with execution duration
+- On error: reports `FAILED` with error message, then **re-throws the original exception**
+
+```java
+@Scheduled(cron = "0 0 2 * * *")
+public void runBackup() {
+    try {
+        bw.wrap("507f1f77bcf86cd799439011", () -> {
+            performBackup();
+        });
+    } catch (Exception e) {
+        // BearWatch already reported FAILED status
+        // You can add additional error handling here
+        logger.error("Backup failed", e);
+    }
+}
+```
+
+> **Tip**: Use `wrap` for most cases. Use `ping` when you need more control (e.g., reporting RUNNING status for long jobs).
+
+### ping - Manual Status Reporting
+
+Use `ping` when you need fine-grained control over status reporting:
 
 ```java
 import io.bearwatch.sdk.model.RequestStatus;
 
-// Success ping
-bw.ping("my-job");
-
-// Failed ping with error message
-bw.ping("my-job", RequestStatus.FAILED, "Database connection failed");
+@Scheduled(cron = "0 0 2 * * *")
+public void runBackup() {
+    try {
+        performBackup();
+        bw.ping("507f1f77bcf86cd799439011", RequestStatus.SUCCESS);
+    } catch (Exception e) {
+        bw.ping("507f1f77bcf86cd799439011", RequestStatus.FAILED, e.getMessage());
+    }
+}
 ```
 
-### Ping with Options
-
-Include additional details with your heartbeat:
+Include output and metadata:
 
 ```java
-bw.ping("etl-job", PingOptions.builder()
-    .status(RequestStatus.SUCCESS)
-    .output("Processed 10,000 records")
-    .metadata("recordCount", 10000)
-    .metadata("source", "postgres")
-    .build());
-
-// With manual timing
-Instant startedAt = Instant.now();
-doWork();
-bw.ping("etl-job", PingOptions.builder()
-    .status(RequestStatus.SUCCESS)
-    .startedAt(startedAt)
-    .completedAt(Instant.now())
-    .build());
+@Scheduled(cron = "0 0 0 * * *")
+public void runBackup() {
+    long bytes = performBackup();
+    bw.ping("507f1f77bcf86cd799439011", PingOptions.builder()
+        .status(RequestStatus.SUCCESS)
+        .output("Backup completed: " + bytes + " bytes")
+        .metadata("bytes", bytes)
+        .build());
+}
 ```
 
-### Wrap Pattern
+#### PingOptions
 
-The easiest way to monitor a job - wrap it and let the SDK handle everything:
+| Option        | Type                   | Default        | Description                                     |
+|---------------|------------------------|----------------|-------------------------------------------------|
+| `status`      | `RequestStatus`        | `SUCCESS`      | `RUNNING`, `SUCCESS`, or `FAILED`               |
+| `output`      | `String`               | -              | Output message (max 10KB)                       |
+| `error`       | `String`               | -              | Error message for `FAILED` status (max 10KB)    |
+| `startedAt`   | `Instant`              | current time   | Job start time                                  |
+| `completedAt` | `Instant`              | current time   | Job completion time                             |
+| `metadata`    | `Map<String, Object>`  | -              | Additional key-value pairs (max 10KB)           |
 
-```java
-// Void task
-bw.wrap("cleanup-job", () -> {
-    cleanupOldFiles();
-    // Automatically sends SUCCESS on completion
-    // Automatically sends FAILED with error message on exception
-});
-
-// Task with return value
-int count = bw.wrap("count-job", () -> {
-    return countRecords();
-});
-```
+> **Note**: `TIMEOUT` and `MISSED` are server-detected states and cannot be set in requests.
 
 ### Async Operations
 
 For non-blocking monitoring, use the async variants:
 
-#### wrapAsync - Async task wrapping with CompletableFuture
-
 ```java
-CompletableFuture<ProcessResult> future = bw.wrapAsync("async-job", () -> {
+// Async ping with callback
+bw.pingAsync("507f1f77bcf86cd799439011", new ResultCallback<HeartbeatResponse>() {
+    @Override
+    public void onSuccess(HeartbeatResponse result) {
+        logger.info("Recorded: {}", result.getRunId());
+    }
+
+    @Override
+    public void onFailure(BearWatchException error) {
+        logger.error("Failed to record", error);
+    }
+});
+
+// Async task wrapping
+CompletableFuture<ProcessResult> future = bw.wrapAsync("507f1f77bcf86cd799439011", () -> {
     return someAsyncOperation();  // Returns CompletableFuture<ProcessResult>
 });
-
-// The SDK automatically sends SUCCESS or FAILED when the future completes
-future.thenAccept(result -> System.out.println("Done: " + result));
 ```
 
-#### completeAsync / failAsync - Fire-and-forget completion
-
-```java
-// Send completion without blocking
-bw.completeAsync("my-job")
-    .thenAccept(response -> log.info("Recorded: {}", response.getRunId()))
-    .exceptionally(e -> { log.error("Failed to record", e); return null; });
-
-// Send failure without blocking
-bw.failAsync("my-job", "Connection timeout")
-    .exceptionally(e -> { log.error("Failed to record", e); return null; });
-```
-
-#### pingAsync - Callback-based async ping
-
-```java
-bw.pingAsync("my-job", new ResultCallback<HeartbeatResponse>() {
-    @Override
-    public void onSuccess(HeartbeatResponse response) {
-        System.out.println("Run recorded: " + response.getRunId());
-    }
-
-    @Override
-    public void onFailure(BearWatchException e) {
-        logger.error("BearWatch error: {}", e.getMessage());
-    }
-});
-```
-
-> **Warning**: Async methods do NOT retry automatically. They make a single attempt only.
-> For reliable delivery with automatic retries, use the synchronous APIs (`ping()`, `wrap()`, etc.).
-
-## Retry Policy
-
-The SDK includes automatic retry with exponential backoff for transient errors:
-
-| Method | Retry | Reason |
-|--------|-------|--------|
-| `ping()` | ✅ Yes | Idempotent operation |
-| `wrap()` | ✅ Yes | Uses ping() internally |
-| `complete()` | ✅ Yes | Idempotent operation |
-| `fail()` | ✅ Yes | Idempotent operation |
-| `pingAsync()` | ❌ No | Async operations are single-attempt |
-| `wrapAsync()` | ❌ No | Async operations are single-attempt |
-| `completeAsync()` | ❌ No | Async operations are single-attempt |
-| `failAsync()` | ❌ No | Async operations are single-attempt |
-
-### Retryable Errors
-
-- **5xx Server Errors**: Automatically retried with exponential backoff
-- **429 Rate Limited**: Retried after `Retry-After` header delay (if present) or default backoff
-- **Network Errors**: Automatically retried
-
-### 429 Rate Limiting
-
-When the server returns 429 (Too Many Requests), the SDK respects the `Retry-After` header:
-
-```java
-// If server returns: 429 with Retry-After: 60
-// SDK will wait 60 seconds before retrying
-```
-
-### Configuring Retry
-
-```java
-BearWatchConfig config = BearWatchConfig.builder("bw_your_api_key")
-    .maxRetries(3)                          // Number of retry attempts (default: 3)
-    .retryDelay(Duration.ofMillis(500))     // Base delay for exponential backoff (default: 500ms)
-    .build();
-```
+> **Warning**: Async methods do NOT retry automatically. They make a single attempt only. For reliable delivery with automatic retries, use the synchronous APIs (`ping()`, `wrap()`, etc.).
 
 ## Configuration
 
 ```java
-BearWatchConfig config = BearWatchConfig.builder("bw_your_api_key")
-    .baseUrl("https://api.bearwatch.dev")  // Default
-    .timeout(Duration.ofSeconds(30))        // Default: 30s
-    .maxRetries(3)                          // Default: 3 (sync only)
-    .retryDelay(Duration.ofMillis(500))     // Default: 500ms
-    .onError(e -> log.error("Error", e))    // Optional global error handler
-    .build();
+BearWatch bw = BearWatch.create(BearWatchConfig.builder("your-api-key")
+    // Optional (defaults shown)
+    .timeout(Duration.ofSeconds(30))        // 30 seconds
+    .maxRetries(3)
+    .retryDelay(Duration.ofMillis(500))     // 500ms base delay
+    .onError(e -> logger.error("BearWatch error", e))  // Global error handler
+    .build());
 ```
 
-## Spring Boot Integration
+| Option       | Type                              | Required | Default    | Description                |
+|--------------|-----------------------------------|----------|------------|----------------------------|
+| `apiKey`     | `String`                          | Yes      | -          | API key for authentication |
+| `timeout`    | `Duration`                        | No       | 30 seconds | Request timeout            |
+| `maxRetries` | `int`                             | No       | `3`        | Max retry attempts         |
+| `retryDelay` | `Duration`                        | No       | 500ms      | Initial retry delay        |
+| `onError`    | `Consumer<BearWatchException>`    | No       | -          | Global error handler       |
+
+## Retry Policy
+
+| Method           | Default Retry | Reason                         |
+|------------------|---------------|--------------------------------|
+| `ping()`         | Enabled       | Idempotent operation           |
+| `wrap()`         | Enabled       | Uses ping() internally         |
+| `pingAsync()`    | Disabled      | Async operations single-attempt|
+| `wrapAsync()`    | Disabled      | Async operations single-attempt|
+
+### Retry Behavior
+
+- **Exponential backoff with jitter**: ~500-1000ms → ~1000-2000ms → ~2000-4000ms
+- **429 Rate Limit**: Respects `Retry-After` header (rate limit: 100 requests/minute per API key)
+- **5xx Server Errors**: Retries with backoff
+- **401/404**: No retry (client errors)
+
+## Error Handling
+
+When the SDK fails to communicate with BearWatch (network failure, server down, invalid API key, etc.), it throws a `BearWatchException`:
+
+```java
+import io.bearwatch.sdk.BearWatch;
+import io.bearwatch.sdk.BearWatchException;
+
+try {
+    bw.ping("507f1f77bcf86cd799439011");
+} catch (BearWatchException e) {
+    // SDK failed to report to BearWatch
+    System.err.println("Code: " + e.getErrorCode());
+    System.err.println("Status: " + e.getStatusCode());
+}
+```
+
+### Error Codes
+
+| Code              | Description              | Retry   |
+|-------------------|--------------------------|---------|
+| `INVALID_API_KEY` | 401 - Invalid API key    | No      |
+| `JOB_NOT_FOUND`   | 404 - Job not found      | No      |
+| `RATE_LIMITED`    | 429 - Rate limit reached | Yes     |
+| `SERVER_ERROR`    | 5xx - Server error       | Yes     |
+| `NETWORK_ERROR`   | Network failure          | Yes     |
+| `TIMEOUT`         | Request timed out        | Yes     |
+
+## Types
+
+The SDK provides clear type separation for requests vs responses:
+
+```java
+import io.bearwatch.sdk.BearWatch;
+import io.bearwatch.sdk.BearWatchConfig;
+import io.bearwatch.sdk.BearWatchException;
+import io.bearwatch.sdk.model.HeartbeatResponse;
+import io.bearwatch.sdk.model.PingOptions;
+import io.bearwatch.sdk.model.RequestStatus;   // For requests: RUNNING, SUCCESS, FAILED
+import io.bearwatch.sdk.model.Status;          // For responses: includes TIMEOUT, MISSED
+```
+
+### Method Signatures
+
+```java
+public class BearWatch {
+    // Sync methods
+    HeartbeatResponse ping(String jobId);
+    HeartbeatResponse ping(String jobId, RequestStatus status);
+    HeartbeatResponse ping(String jobId, RequestStatus status, String error);
+    HeartbeatResponse ping(String jobId, PingOptions options);
+
+    void wrap(String jobId, Runnable task);
+    <T> T wrap(String jobId, Callable<T> task);
+
+    // Async methods (callback-based)
+    void pingAsync(String jobId, ResultCallback<HeartbeatResponse> callback);
+    void pingAsync(String jobId, PingOptions options, ResultCallback<HeartbeatResponse> callback);
+
+    // Async methods (CompletableFuture-based)
+    <T> CompletableFuture<T> wrapAsync(String jobId, Supplier<CompletableFuture<T>> task);
+
+    void close();
+}
+```
+
+## Common Patterns
+
+### Spring Boot with @Scheduled
 
 ```java
 import io.bearwatch.sdk.BearWatch;
@@ -208,7 +290,6 @@ import io.bearwatch.sdk.BearWatchConfig;
 
 @Configuration
 public class BearWatchConfiguration {
-
     @Bean
     public BearWatch bearWatch(@Value("${bearwatch.api-key}") String apiKey) {
         return BearWatch.create(BearWatchConfig.builder(apiKey).build());
@@ -222,102 +303,94 @@ public class DailyReportJob {
 
     @Scheduled(cron = "0 0 9 * * *")
     public void generateDailyReport() {
-        bearWatch.wrap("daily-report", () -> {
-            // Generate and send report
+        bearWatch.wrap("6848c9e5f8a2b3d4e5f60001", () -> {
+            generateAndSendReport();
         });
     }
 }
 ```
 
-## Error Handling
+### Quartz Scheduler
 
 ```java
-try {
-    bw.ping("my-job");
-} catch (BearWatchException e) {
-    System.err.println("Status code: " + e.getStatusCode());
-    System.err.println("Error code: " + e.getErrorCode());
-    System.err.println("Message: " + e.getMessage());
+public class BackupJob implements Job {
+    private final BearWatch bw = BearWatch.create(
+        BearWatchConfig.builder(System.getenv("BEARWATCH_API_KEY")).build()
+    );
 
-    // Error context provides additional debugging information
-    if (e.getContext() != null) {
-        System.err.println("Job ID: " + e.getContext().getJobId());
-        System.err.println("Operation: " + e.getContext().getOperation());
-    }
-
-    // For 429 errors, check retry delay
-    if (e.getRetryAfterMs() != null) {
-        System.err.println("Retry after: " + e.getRetryAfterMs() + "ms");
+    @Override
+    public void execute(JobExecutionContext context) {
+        bw.wrap("6848c9e5f8a2b3d4e5f60002", () -> {
+            performBackup();
+        });
     }
 }
 ```
 
-### Error Context
-
-All exceptions include context information for easier debugging:
+### Long-Running Jobs
 
 ```java
-try {
-    bw.ping("my-job");
-} catch (BearWatchException e) {
-    BearWatchException.ErrorContext ctx = e.getContext();
-    // ctx.getJobId()      -> "my-job"
-    // ctx.getOperation()  -> "ping", "complete", "fail", "pingAsync", "completeAsync", "failAsync"
-    // ctx.getRunId()      -> null (or runId if applicable)
+public void runLongBackup() {
+    String jobId = "6848c9e5f8a2b3d4e5f60003";
+    Instant startedAt = Instant.now();
+
+    bw.ping(jobId, RequestStatus.RUNNING);
+
+    try {
+        performBackup();
+        bw.ping(jobId, PingOptions.builder()
+            .status(RequestStatus.SUCCESS)
+            .startedAt(startedAt)
+            .completedAt(Instant.now())
+            .build());
+    } catch (Exception e) {
+        bw.ping(jobId, PingOptions.builder()
+            .status(RequestStatus.FAILED)
+            .startedAt(startedAt)
+            .completedAt(Instant.now())
+            .error(e.getMessage())
+            .build());
+        throw e;
+    }
 }
 ```
 
-## API Reference
+### AWS Lambda
 
-### BearWatch
+```java
+import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.RequestHandler;
+import io.bearwatch.sdk.BearWatch;
+import io.bearwatch.sdk.BearWatchConfig;
 
-| Method | Description |
-|--------|-------------|
-| `ping(jobId)` | Send success heartbeat |
-| `ping(jobId, status)` | Send heartbeat with status |
-| `ping(jobId, status, error)` | Send heartbeat with status and error message |
-| `ping(jobId, options)` | Send heartbeat with options |
-| `pingAsync(jobId, callback)` | Send heartbeat asynchronously (callback) |
-| `wrap(jobId, runnable)` | Wrap a void task |
-| `wrap(jobId, callable)` | Wrap a task with return value |
-| `wrapAsync(jobId, supplier)` | Wrap an async task returning CompletableFuture |
-| `complete(jobId)` | Send success completion |
-| `complete(jobId, options)` | Send success completion with options |
-| `completeAsync(jobId)` | Send success completion asynchronously |
-| `completeAsync(jobId, options)` | Send success completion with options asynchronously |
-| `fail(jobId, error)` | Send failure with error message |
-| `fail(jobId, throwable)` | Send failure with exception |
-| `failAsync(jobId, error)` | Send failure asynchronously |
-| `failAsync(jobId, throwable)` | Send failure with exception asynchronously |
-| `close()` | Release resources |
+public class BackupHandler implements RequestHandler<Object, String> {
+    private final BearWatch bw = BearWatch.create(
+        BearWatchConfig.builder(System.getenv("BEARWATCH_API_KEY")).build()
+    );
 
-### RequestStatus (for requests)
+    @Override
+    public String handleRequest(Object input, Context context) {
+        bw.wrap("6848c9e5f8a2b3d4e5f60004", () -> {
+            performBackup();
+        });
+        return "OK";
+    }
+}
+```
 
-Use `RequestStatus` when sending heartbeats:
+## FAQ
 
-| Value | Description |
-|-------|-------------|
-| `SUCCESS` | Job completed successfully |
-| `FAILED` | Job failed with error |
-| `RUNNING` | Job is currently running |
+**Q: Do I need to create jobs in the dashboard first?**
+A: Yes, create a job in the [BearWatch Dashboard](https://bearwatch.dev) first to get a job ID.
 
-### Status (for responses)
+**Q: What's the difference between `wrap` and `ping`?**
+A: `wrap` automatically measures execution time and reports SUCCESS/FAILED based on whether the function completes or throws. `ping` gives you manual control over when and what to report.
 
-`Status` includes all values that can appear in server responses:
+**Q: What happens if the SDK fails to report (network error)?**
+A: By default, the SDK retries 3 times with exponential backoff. If all retries fail, `ping` throws a `BearWatchException`. For `wrap`, the original exception takes priority and is always re-thrown.
 
-| Value | Description |
-|-------|-------------|
-| `SUCCESS` | Job completed successfully |
-| `FAILED` | Job failed with error |
-| `RUNNING` | Job is currently running |
-| `TIMEOUT` | Job timed out (server-detected) |
-| `MISSED` | Job run was missed (server-detected) |
-
-> **Note**: `TIMEOUT` and `MISSED` are server-detected states. Do not use them in requests - use `RequestStatus` instead.
-
-## Requirements
-
-- Java 11 or higher
+**Q: Should I call `close()` on the BearWatch instance?**
+A: Yes, when your application shuts down, call `close()` to release HTTP client resources. In Spring Boot, define it as a `@Bean` and Spring will handle lifecycle management.
 
 ## License
 

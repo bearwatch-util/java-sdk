@@ -8,7 +8,6 @@ import io.bearwatch.sdk.model.HeartbeatRequest;
 import io.bearwatch.sdk.model.HeartbeatResponse;
 import io.bearwatch.sdk.model.RequestStatus;
 import io.bearwatch.sdk.model.Status;
-import io.bearwatch.sdk.options.CompleteOptions;
 import io.bearwatch.sdk.options.PingOptions;
 
 import java.time.Instant;
@@ -95,22 +94,6 @@ public class BearWatch {
     }
 
     /**
-     * Sends a heartbeat with the given status.
-     *
-     * @param jobId the job ID
-     * @param status the status
-     * @return the heartbeat response
-     * @throws IllegalArgumentException if status is TIMEOUT or MISSED
-     * @deprecated Use {@link #ping(String, RequestStatus)} instead.
-     *             TIMEOUT and MISSED are server-detected states and cannot be set in requests.
-     */
-    @Deprecated
-    @SuppressWarnings("deprecation")
-    public HeartbeatResponse ping(String jobId, Status status) {
-        return ping(jobId, PingOptions.builder().status(status).build());
-    }
-
-    /**
      * Sends a failed heartbeat with an error message.
      *
      * @param jobId the job ID
@@ -119,23 +102,6 @@ public class BearWatch {
      * @return the heartbeat response
      */
     public HeartbeatResponse ping(String jobId, RequestStatus status, String error) {
-        return ping(jobId, PingOptions.builder().status(status).error(error).build());
-    }
-
-    /**
-     * Sends a failed heartbeat with an error message.
-     *
-     * @param jobId the job ID
-     * @param status the status (should be FAILED)
-     * @param error the error message
-     * @return the heartbeat response
-     * @throws IllegalArgumentException if status is TIMEOUT or MISSED
-     * @deprecated Use {@link #ping(String, RequestStatus, String)} instead.
-     *             TIMEOUT and MISSED are server-detected states and cannot be set in requests.
-     */
-    @Deprecated
-    @SuppressWarnings("deprecation")
-    public HeartbeatResponse ping(String jobId, Status status, String error) {
         return ping(jobId, PingOptions.builder().status(status).error(error).build());
     }
 
@@ -309,106 +275,6 @@ public class BearWatch {
                     }
                 })
                 .thenCompose(Function.identity());
-    }
-
-    // ========== Complete/Fail ==========
-
-    /**
-     * Sends a success completion for a job.
-     *
-     * @param jobId the job ID
-     * @return the heartbeat response
-     */
-    public HeartbeatResponse complete(String jobId) {
-        return complete(jobId, null);
-    }
-
-    /**
-     * Sends a success completion for a job with options.
-     *
-     * @param jobId the job ID
-     * @param options the complete options
-     * @return the heartbeat response
-     */
-    public HeartbeatResponse complete(String jobId, CompleteOptions options) {
-        return completeInternal(
-                jobId,
-                null,
-                options != null ? options.getOutput() : null,
-                options != null ? options.getMetadata() : null
-        );
-    }
-
-    /**
-     * Sends a failure for a job.
-     *
-     * @param jobId the job ID
-     * @param error the error message
-     * @return the heartbeat response
-     */
-    public HeartbeatResponse fail(String jobId, String error) {
-        return failInternal(jobId, null, error);
-    }
-
-    /**
-     * Sends a failure for a job with an exception.
-     *
-     * @param jobId the job ID
-     * @param error the exception
-     * @return the heartbeat response
-     */
-    public HeartbeatResponse fail(String jobId, Throwable error) {
-        return fail(jobId, error.getMessage());
-    }
-
-    // ========== Async Complete/Fail ==========
-
-    /**
-     * Sends a success completion for a job asynchronously.
-     *
-     * @param jobId the job ID
-     * @return a CompletableFuture that completes with the heartbeat response
-     */
-    public CompletableFuture<HeartbeatResponse> completeAsync(String jobId) {
-        return completeAsync(jobId, null);
-    }
-
-    /**
-     * Sends a success completion for a job asynchronously with options.
-     *
-     * @param jobId the job ID
-     * @param options the complete options
-     * @return a CompletableFuture that completes with the heartbeat response
-     */
-    public CompletableFuture<HeartbeatResponse> completeAsync(String jobId, CompleteOptions options) {
-        return completeInternalAsync(
-                jobId,
-                null,
-                options != null ? options.getOutput() : null,
-                options != null ? options.getMetadata() : null
-        );
-    }
-
-    /**
-     * Sends a failure for a job asynchronously.
-     *
-     * @param jobId the job ID
-     * @param error the error message
-     * @return a CompletableFuture that completes with the heartbeat response
-     */
-    public CompletableFuture<HeartbeatResponse> failAsync(String jobId, String error) {
-        return failInternalAsync(jobId, null, error);
-    }
-
-    /**
-     * Sends a failure for a job asynchronously with an exception.
-     *
-     * @param jobId the job ID
-     * @param error the exception
-     * @return a CompletableFuture that completes with the heartbeat response
-     */
-    public CompletableFuture<HeartbeatResponse> failAsync(String jobId, Throwable error) {
-        return failAsync(jobId, error.getMessage());
     }
 
     // ========== Internal Methods ==========

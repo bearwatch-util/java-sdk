@@ -126,38 +126,6 @@ class PingOptionsTest {
     }
 
     @Test
-    void shouldRejectTimeoutStatusInBuilder() {
-        assertThatThrownBy(() ->
-                PingOptions.builder().status(Status.TIMEOUT).build()
-        )
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("TIMEOUT");
-    }
-
-    @Test
-    void shouldRejectMissedStatusInBuilder() {
-        assertThatThrownBy(() ->
-                PingOptions.builder().status(Status.MISSED).build()
-        )
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("MISSED");
-    }
-
-    @Test
-    @SuppressWarnings("deprecation")
-    void shouldAcceptValidStatusValuesFromDeprecatedMethod() {
-        // SUCCESS, FAILED, RUNNING should work via deprecated method
-        PingOptions successOptions = PingOptions.builder().status(Status.SUCCESS).build();
-        assertThat(successOptions.getStatus()).isEqualTo(RequestStatus.SUCCESS);
-
-        PingOptions failedOptions = PingOptions.builder().status(Status.FAILED).build();
-        assertThat(failedOptions.getStatus()).isEqualTo(RequestStatus.FAILED);
-
-        PingOptions runningOptions = PingOptions.builder().status(Status.RUNNING).build();
-        assertThat(runningOptions.getStatus()).isEqualTo(RequestStatus.RUNNING);
-    }
-
-    @Test
     void shouldSupportAllRequestStatusValues() {
         // All 3 RequestStatus values should work
         PingOptions successOptions = PingOptions.builder().status(RequestStatus.SUCCESS).build();

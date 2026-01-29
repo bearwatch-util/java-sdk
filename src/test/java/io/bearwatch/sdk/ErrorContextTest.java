@@ -61,41 +61,6 @@ class ErrorContextTest {
     }
 
     @Test
-    void completeExceptionShouldContainContext() {
-        server.enqueue(new MockResponse()
-                .setResponseCode(401)
-                .setBody("{\"success\":false,\"error\":{\"code\":\"INVALID_API_KEY\",\"message\":\"Invalid API key\"}}"));
-
-        assertThatThrownBy(() -> client.complete("job-789"))
-                .isInstanceOf(BearWatchException.class)
-                .satisfies(e -> {
-                    BearWatchException ex = (BearWatchException) e;
-                    assertThat(ex.getContext()).isNotNull();
-                    assertThat(ex.getContext().getJobId()).isEqualTo("job-789");
-                    assertThat(ex.getContext().getOperation()).isEqualTo("complete");
-                });
-    }
-
-    @Test
-    void failExceptionShouldContainContext() {
-        server.enqueue(new MockResponse()
-                .setResponseCode(429)
-                .addHeader("Retry-After", "60")
-                .setBody("{\"success\":false,\"error\":{\"code\":\"RATE_LIMITED\",\"message\":\"Rate limited\"}}"));
-
-        assertThatThrownBy(() -> client.fail("job-abc", "Test error"))
-                .isInstanceOf(BearWatchException.class)
-                .satisfies(e -> {
-                    BearWatchException ex = (BearWatchException) e;
-                    assertThat(ex.getContext()).isNotNull();
-                    assertThat(ex.getContext().getJobId()).isEqualTo("job-abc");
-                    assertThat(ex.getContext().getOperation()).isEqualTo("fail");
-                    // Also verify retryAfterMs is preserved
-                    assertThat(ex.getRetryAfterMs()).isEqualTo(60_000L);
-                });
-    }
-
-    @Test
     void pingAsyncExceptionShouldContainContext() throws InterruptedException {
         server.enqueue(new MockResponse()
                 .setResponseCode(500)
