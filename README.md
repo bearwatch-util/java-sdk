@@ -8,7 +8,7 @@ Official Java SDK for [BearWatch](https://bearwatch.dev) - Job monitoring and al
 
 ```kotlin
 dependencies {
-    implementation("io.github.bearwatch-util:bearwatch-java-sdk:0.1.0")
+    implementation("io.github.bearwatch-util:bearwatch-java-sdk:0.1.1")
 }
 ```
 
@@ -16,7 +16,7 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'io.github.bearwatch-util:bearwatch-java-sdk:0.1.0'
+    implementation 'io.github.bearwatch-util:bearwatch-java-sdk:0.1.1'
 }
 ```
 
@@ -26,7 +26,7 @@ dependencies {
 <dependency>
     <groupId>io.github.bearwatch-util</groupId>
     <artifactId>bearwatch-java-sdk</artifactId>
-    <version>0.1.0</version>
+    <version>0.1.1</version>
 </dependency>
 ```
 
