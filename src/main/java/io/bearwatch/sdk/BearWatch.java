@@ -11,6 +11,8 @@ import io.bearwatch.sdk.model.Status;
 import io.bearwatch.sdk.options.PingOptions;
 import io.bearwatch.sdk.options.WrapOptions;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
@@ -207,7 +209,7 @@ public class BearWatch {
         } catch (Exception e) {
             // Report failure but ignore heartbeat errors to preserve original exception
             try {
-                String errorMessage = e.getMessage() != null ? e.getMessage() : e.toString();
+                String errorMessage = getStackTraceAsString(e);
                 failInternal(jobId, startedAt, errorMessage, metadata);
             } catch (Exception ignored) {
                 // Heartbeat failure is ignored - original exception takes priority
@@ -266,7 +268,7 @@ public class BearWatch {
         } catch (Exception e) {
             // Report failure but ignore heartbeat errors to preserve original exception
             try {
-                String errorMessage = e.getMessage() != null ? e.getMessage() : e.toString();
+                String errorMessage = getStackTraceAsString(e);
                 failInternal(jobId, startedAt, errorMessage, metadata);
             } catch (Exception ignored) {
                 // Heartbeat failure is ignored - original exception takes priority
@@ -316,7 +318,7 @@ public class BearWatch {
                     if (error != null) {
                         // Send failure heartbeat and wait for it, then re-throw original error
                         Throwable cause = error.getCause() != null ? error.getCause() : error;
-                        String errorMessage = cause.getMessage() != null ? cause.getMessage() : cause.toString();
+                        String errorMessage = getStackTraceAsString(cause);
                         return failInternalAsync(jobId, startedAt, errorMessage, metadata)
                                 .<T>handle((heartbeatResponse, heartbeatError) -> {
                                     // Ignore heartbeat error, re-throw original error
@@ -434,6 +436,20 @@ public class BearWatch {
                     }
                     throw new BearWatchException("Unexpected error", e);
                 });
+    }
+
+    // ========== Utility Methods ==========
+
+    /**
+     * Converts a Throwable's stack trace to a string.
+     *
+     * @param throwable the throwable to convert
+     * @return the full stack trace as a string
+     */
+    private static String getStackTraceAsString(Throwable throwable) {
+        StringWriter sw = new StringWriter();
+        throwable.printStackTrace(new PrintWriter(sw));
+        return sw.toString();
     }
 
     // ========== Lifecycle ==========

@@ -231,7 +231,9 @@ class BearWatchTest {
         RecordedRequest request = server.takeRequest();
         String body = request.getBody().readUtf8();
         assertThat(body).contains("\"status\":\"FAILED\"");
-        assertThat(body).contains("\"error\":\"Async task failed!\"");
+        // Error field now contains full stack trace
+        assertThat(body).contains("Async task failed!");
+        assertThat(body).contains("RuntimeException");
     }
 
     @Test

@@ -155,6 +155,9 @@ Use `ping` when you need fine-grained control over status reporting:
 
 ```java
 import io.bearwatch.sdk.model.RequestStatus;
+import io.bearwatch.sdk.options.PingOptions;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 
 @Scheduled(cron = "0 0 2 * * *")
 public void runBackup() {
@@ -162,7 +165,12 @@ public void runBackup() {
         performBackup();
         bw.ping("507f1f77bcf86cd799439011", RequestStatus.SUCCESS);
     } catch (Exception e) {
-        bw.ping("507f1f77bcf86cd799439011", RequestStatus.FAILED, e.getMessage());
+        StringWriter sw = new StringWriter();
+        e.printStackTrace(new PrintWriter(sw));
+        bw.ping("507f1f77bcf86cd799439011", PingOptions.builder()
+            .status(RequestStatus.FAILED)
+            .error(sw.toString())
+            .build());
     }
 }
 ```
@@ -189,15 +197,16 @@ public void runBackup() {
 |---------------|------------------------|----------------|-------------------------------------------------|
 | `status`      | `RequestStatus`        | `SUCCESS`      | `RUNNING`, `SUCCESS`, or `FAILED`               |
 | `output`      | `String`               | -              | Output message (max 10KB)                       |
-| `error`       | `String`               | -              | Error message for `FAILED` status (max 10KB)    |
+| `error`       | `String`               | -              | Error message for `FAILED` status (max 75KB)    |
 | `startedAt`   | `Instant`              | current time   | Job start time                                  |
 | `completedAt` | `Instant`              | current time   | Job completion time                             |
 | `metadata`    | `Map<String, Object>`  | -              | Additional key-value pairs (max 10KB)           |
 
 > **Note**: `TIMEOUT` and `MISSED` are server-detected states and cannot be set in requests.
 
-> **Size Limits**: The `output`, `error`, and `metadata` fields have a 10KB size limit. If exceeded, the server automatically truncates the data (no error is returned):
-> - `output` and `error`: Strings are truncated to fit within 10KB
+> **Size Limits**: The `output`, `error`, and `metadata` fields have size limits. If exceeded, the server automatically truncates the data (no error is returned):
+> - `output`: Truncated to fit within 10KB
+> - `error`: Truncated to fit within 75KB
 > - `metadata`: Set to `null` if the serialized size exceeds 10KB
 
 ### Async Operations
@@ -277,7 +286,7 @@ BearWatch bw = BearWatch.create(BearWatchConfig.builder("your-api-key")
 ### Retry Behavior
 
 - **Exponential backoff with jitter**: ~500-1000ms → ~1000-2000ms → ~2000-4000ms
-- **429 Rate Limit**: Respects `Retry-After` header (rate limit: 100 requests/minute per API key)
+- **429 Rate Limit**: Respects `Retry-After` header
 - **5xx Server Errors**: Retries with backoff
 - **401/404**: No retry (client errors)
 
