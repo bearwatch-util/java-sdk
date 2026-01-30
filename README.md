@@ -8,7 +8,7 @@ Official Java SDK for [BearWatch](https://bearwatch.dev) - Job monitoring and al
 
 ```kotlin
 dependencies {
-    implementation("io.github.bearwatch-util:bearwatch-java-sdk:0.1.1")
+    implementation("io.github.bearwatch-util:bearwatch-java-sdk:0.1.2")
 }
 ```
 
@@ -16,7 +16,7 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'io.github.bearwatch-util:bearwatch-java-sdk:0.1.1'
+    implementation 'io.github.bearwatch-util:bearwatch-java-sdk:0.1.2'
 }
 ```
 
@@ -26,7 +26,7 @@ dependencies {
 <dependency>
     <groupId>io.github.bearwatch-util</groupId>
     <artifactId>bearwatch-java-sdk</artifactId>
-    <version>0.1.1</version>
+    <version>0.1.2</version>
 </dependency>
 ```
 
@@ -67,6 +67,16 @@ public class BackupJob {
 ```
 
 ## Usage
+
+### Quick Reference
+
+| Want to...                        | Use this                                              |
+|-----------------------------------|-------------------------------------------------------|
+| Report success quickly            | `bw.ping(jobId)` or `bw.ping(jobId, RequestStatus.SUCCESS)` |
+| Report failure with error         | `bw.ping(jobId, RequestStatus.FAILED, "error message")` |
+| Auto-track execution time         | `bw.wrap(jobId, () -> { ... })`                       |
+| Report long-running job started   | `bw.ping(jobId, RequestStatus.RUNNING)`               |
+| Non-blocking report               | `bw.pingAsync(jobId, callback)`                       |
 
 ### wrap - Automatic Status Reporting
 
@@ -113,6 +123,7 @@ Include output and metadata with automatic timing:
 
 ```java
 bw.wrap("507f1f77bcf86cd799439011", WrapOptions.builder()
+    .output("Backup completed successfully")
     .metadata("server", "backup-01")
     .metadata("region", "ap-northeast-2")
     .metadata("version", "1.2.0")
@@ -122,13 +133,21 @@ bw.wrap("507f1f77bcf86cd799439011", WrapOptions.builder()
 
 // With return value
 int count = bw.wrap("507f1f77bcf86cd799439011", WrapOptions.builder()
+    .output("Processed records")
     .metadata("server", "backup-01")
-    .metadata("region", "ap-northeast-2")
-    .metadata("version", "1.2.0")
     .build(), () -> {
     return processRecords();
 });
 ```
+
+#### WrapOptions
+
+| Option     | Type                  | Default | Description                           |
+|------------|-----------------------|---------|---------------------------------------|
+| `output`   | `String`              | -       | Output message (max 10KB)             |
+| `metadata` | `Map<String, Object>` | -       | Additional key-value pairs (max 10KB) |
+
+> **Note**: `wrap` automatically sets `startedAt`, `completedAt`, and `status` (SUCCESS/FAILED). Use `ping` with `PingOptions` if you need manual control over these fields.
 
 ### ping - Manual Status Reporting
 
@@ -177,6 +196,10 @@ public void runBackup() {
 
 > **Note**: `TIMEOUT` and `MISSED` are server-detected states and cannot be set in requests.
 
+> **Size Limits**: The `output`, `error`, and `metadata` fields have a 10KB size limit. If exceeded, the server automatically truncates the data (no error is returned):
+> - `output` and `error`: Strings are truncated to fit within 10KB
+> - `metadata`: Set to `null` if the serialized size exceeds 10KB
+
 ### Async Operations
 
 For non-blocking monitoring, use the async variants:
@@ -195,6 +218,23 @@ bw.pingAsync("507f1f77bcf86cd799439011", new ResultCallback<HeartbeatResponse>()
     }
 });
 
+// Async ping with options
+bw.pingAsync("507f1f77bcf86cd799439011", PingOptions.builder()
+    .status(RequestStatus.SUCCESS)
+    .output("Processed 1000 records")
+    .metadata("server", "web-01")
+    .build(), new ResultCallback<HeartbeatResponse>() {
+    @Override
+    public void onSuccess(HeartbeatResponse result) {
+        logger.info("Recorded: {}", result.getRunId());
+    }
+
+    @Override
+    public void onFailure(BearWatchException error) {
+        logger.error("Failed to record", error);
+    }
+});
+
 // Async task wrapping
 CompletableFuture<ProcessResult> future = bw.wrapAsync("507f1f77bcf86cd799439011", () -> {
     return someAsyncOperation();  // Returns CompletableFuture<ProcessResult>
@@ -202,6 +242,8 @@ CompletableFuture<ProcessResult> future = bw.wrapAsync("507f1f77bcf86cd799439011
 ```
 
 > **Warning**: Async methods do NOT retry automatically. They make a single attempt only. For reliable delivery with automatic retries, use the synchronous APIs (`ping()`, `wrap()`, etc.).
+
+> **Note**: `wrap` uses `Callable<T>` (can throw checked exceptions), while `wrapAsync` uses `Supplier<CompletableFuture<T>>` (returns a future).
 
 ## Configuration
 
@@ -241,7 +283,9 @@ BearWatch bw = BearWatch.create(BearWatchConfig.builder("your-api-key")
 
 ## Error Handling
 
-When the SDK fails to communicate with BearWatch (network failure, server down, invalid API key, etc.), it throws a `BearWatchException`:
+`BearWatchException` extends `RuntimeException`, so it's an unchecked exception. When the SDK fails to communicate with BearWatch (network failure, server down, invalid API key, etc.), it throws a `BearWatchException`:
+
+> **Note**: Since `BearWatchException` is a `RuntimeException`, place its catch block before generic `Exception` catches to handle SDK errors specifically.
 
 ```java
 import io.bearwatch.sdk.BearWatch;
@@ -292,6 +336,7 @@ The SDK provides clear type separation for requests vs responses:
 import io.bearwatch.sdk.BearWatch;
 import io.bearwatch.sdk.BearWatchConfig;
 import io.bearwatch.sdk.BearWatchException;
+import io.bearwatch.sdk.callback.ResultCallback;  // For async callbacks
 import io.bearwatch.sdk.model.HeartbeatResponse;
 import io.bearwatch.sdk.options.PingOptions;
 import io.bearwatch.sdk.options.WrapOptions;
@@ -390,21 +435,78 @@ public class BackupJob implements Job {
 }
 ```
 
-### Long-Running Jobs
+### Long-Running Jobs with RUNNING Status
+
+Use `RUNNING` status to track jobs that take significant time (minutes to hours). This enables:
+- **Real-time visibility**: Dashboard shows the job is actively executing
+- **Accurate duration**: Capture precise `startedAt` before work begins
+- **Stuck job detection**: Server can detect if a job stays in RUNNING too long
+
+#### Basic Pattern: RUNNING → SUCCESS/FAILED
 
 ```java
 public void runLongBackup() {
     String jobId = "6848c9e5f8a2b3d4e5f60003";
     Instant startedAt = Instant.now();
 
+    // 1. Report RUNNING immediately when job starts
     bw.ping(jobId, RequestStatus.RUNNING);
 
     try {
         performBackup();
+
+        // 2. Report SUCCESS with accurate timing
         bw.ping(jobId, PingOptions.builder()
             .status(RequestStatus.SUCCESS)
             .startedAt(startedAt)
             .completedAt(Instant.now())
+            .build());
+    } catch (Exception e) {
+        // 3. Report FAILED with error details
+        bw.ping(jobId, PingOptions.builder()
+            .status(RequestStatus.FAILED)
+            .startedAt(startedAt)
+            .completedAt(Instant.now())
+            .error(e.getMessage())
+            .build());
+        throw e;
+    }
+}
+```
+
+#### Progress Updates for Very Long Jobs
+
+For jobs running 30+ minutes, send periodic RUNNING pings to show progress:
+
+```java
+public void runDataMigration() {
+    String jobId = "6848c9e5f8a2b3d4e5f60003";
+    Instant startedAt = Instant.now();
+
+    bw.ping(jobId, PingOptions.builder()
+        .status(RequestStatus.RUNNING)
+        .output("Starting migration...")
+        .build());
+
+    try {
+        List<Table> tables = getTablesToMigrate();
+        for (int i = 0; i < tables.size(); i++) {
+            migrateTable(tables.get(i));
+
+            // Progress update every N tables
+            if ((i + 1) % 10 == 0) {
+                bw.ping(jobId, PingOptions.builder()
+                    .status(RequestStatus.RUNNING)
+                    .output(String.format("Progress: %d/%d tables", i + 1, tables.size()))
+                    .build());
+            }
+        }
+
+        bw.ping(jobId, PingOptions.builder()
+            .status(RequestStatus.SUCCESS)
+            .startedAt(startedAt)
+            .completedAt(Instant.now())
+            .output("Migrated " + tables.size() + " tables")
             .build());
     } catch (Exception e) {
         bw.ping(jobId, PingOptions.builder()
@@ -417,6 +519,8 @@ public void runLongBackup() {
     }
 }
 ```
+
+> **When to use RUNNING**: Jobs over 1 minute. For quick jobs (< 1 minute), use `wrap()` instead—it's simpler and handles timing automatically.
 
 ### AWS Lambda
 
