@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.github.bearwatch-util"
-version = "0.1.2"
+version = "0.1.3"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_11
