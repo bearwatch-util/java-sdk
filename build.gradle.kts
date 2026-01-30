@@ -1,7 +1,6 @@
 plugins {
     java
-    `maven-publish`
-    signing
+    id("com.vanniktech.maven.publish") version "0.30.0"
 }
 
 group = "io.github.bearwatch-util"
@@ -10,8 +9,6 @@ version = "0.1.1"
 java {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
-    withJavadocJar()
-    withSourcesJar()
 }
 
 repositories {
@@ -37,62 +34,36 @@ tasks.test {
     useJUnitPlatform()
 }
 
-publishing {
-    publications {
-        create<MavenPublication>("mavenJava") {
-            from(components["java"])
+mavenPublishing {
+    publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
+    signAllPublications()
 
-            pom {
-                name.set("BearWatch Java SDK")
-                description.set("Official Java SDK for BearWatch - Cron/Job Monitoring")
-                url.set("https://github.com/bearwatch-util/bearwatch-java-sdk")
+    coordinates(group.toString(), "bearwatch-java-sdk", version.toString())
 
-                licenses {
-                    license {
-                        name.set("MIT License")
-                        url.set("https://opensource.org/licenses/MIT")
-                    }
-                }
+    pom {
+        name.set("BearWatch Java SDK")
+        description.set("Official Java SDK for BearWatch - Cron/Job Monitoring")
+        url.set("https://github.com/bearwatch-util/java-sdk")
 
-                developers {
-                    developer {
-                        id.set("bearwatch")
-                        name.set("BearWatch Team")
-                        email.set("support@bearwatch.dev")
-                    }
-                }
-
-                scm {
-                    connection.set("scm:git:git://github.com/bearwatch-util/bearwatch-java-sdk.git")
-                    developerConnection.set("scm:git:ssh://github.com/bearwatch-util/bearwatch-java-sdk.git")
-                    url.set("https://github.com/bearwatch-util/bearwatch-java-sdk")
-                }
+        licenses {
+            license {
+                name.set("MIT License")
+                url.set("https://opensource.org/licenses/MIT")
             }
         }
-    }
 
-    repositories {
-        maven {
-            name = "sonatype"
-            val releasesRepoUrl = uri("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
-            val snapshotsRepoUrl = uri("https://s01.oss.sonatype.org/content/repositories/snapshots/")
-            url = if (version.toString().endsWith("SNAPSHOT")) snapshotsRepoUrl else releasesRepoUrl
-
-            credentials {
-                username = findProperty("sonatypeUsername") as String? ?: System.getenv("SONATYPE_USERNAME")
-                password = findProperty("sonatypePassword") as String? ?: System.getenv("SONATYPE_PASSWORD")
+        developers {
+            developer {
+                id.set("bearwatch")
+                name.set("BearWatch Team")
+                email.set("support@bearwatch.dev")
             }
         }
-    }
-}
 
-signing {
-    val signingKey = System.getenv("GPG_SIGNING_KEY")
-    val signingPassword = System.getenv("GPG_SIGNING_PASSWORD")
-    if (signingKey != null && signingPassword != null) {
-        useInMemoryPgpKeys(signingKey, signingPassword)
-    } else {
-        useGpgCmd()
+        scm {
+            connection.set("scm:git:git://github.com/bearwatch-util/java-sdk.git")
+            developerConnection.set("scm:git:ssh://github.com/bearwatch-util/java-sdk.git")
+            url.set("https://github.com/bearwatch-util/java-sdk")
+        }
     }
-    sign(publishing.publications["mavenJava"])
 }
